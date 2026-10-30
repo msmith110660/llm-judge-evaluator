@@ -1,0 +1,1230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Judge Batch Runner</title>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.js"></script>
+  <style>
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Dark theme palette ─────────────────────────────────────────────── */
+    :root {
+      --bg:           #12161C;
+      --surface:      #1C222B;
+      --surface2:     #273040;
+      --border:       #3A4556;
+      --accent:       #2563EB;
+      --accent-glow:  rgba(37, 99, 235, 0.28);
+      --accent-light: #DBEAFE;
+      --gold:         #F2B43C;
+      --gold-glow:    rgba(242, 180, 60, 0.2);
+      --text:         #E2E8F0;
+      --text-muted:   #9CA3B0;
+      --text-dim:     #6B7280;
+      --green:        #10b981;
+      --yellow:       #F2B43C;
+      --red:          #ef4444;
+      --purple:       #a78bfa;
+      --teal:         #2dd4bf;
+      --orange:       #F2B43C;
+      --radius: 12px;
+    }
+
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); padding: 40px; line-height: 1.6; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; }
+    label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
+    textarea, input, select { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; color: var(--text); outline: none; margin-bottom: 15px; font-family: inherit; transition: border-color 0.2s; font-size: 14px; }
+    textarea:focus, input:focus, select:focus { border-color: var(--accent); }
+    select { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238892a4' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
+    select option { background: var(--surface2); color: var(--text); }
+    .fields-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .fields-row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .btn-wrap { text-align: center; margin: 24px 0; display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; }
+    button { background: var(--accent); color: white; border: none; padding: 16px 48px; border-radius: 8px; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 15px var(--accent-glow); font-size: 15px; font-family: inherit; }
+    button:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 6px 20px var(--accent-glow); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    button.secondary { background: var(--surface2); border: 1px solid var(--border); color: var(--text); box-shadow: none; }
+    button.secondary:hover:not(:disabled) { background: var(--border); }
+    .spinner { width: 40px; height: 40px; border: 4px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Header ─────────────────────────────────────────────────────────────── */
+    .header { text-align: center; margin-bottom: 36px; }
+    .header-badge { display: inline-block; background: var(--accent-glow); padding: 6px 16px; border-radius: 100px; font-size: 12px; color: var(--accent-light); border: 1px solid rgba(37,99,235,0.4); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
+
+    /* ── Step bar ────────────────────────────────────────────────────────────── */
+    .step-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      margin-bottom: 28px;
+    }
+    .step-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-dim);
+    }
+    .step-item.active { color: var(--accent); }
+    .step-item.done { color: var(--green); }
+    .step-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .step-item.active .step-num { background: var(--accent); color: white; }
+    .step-item.done .step-num { background: var(--green); color: white; }
+    .step-connector {
+      width: 60px;
+      height: 2px;
+      background: var(--border);
+      margin: 0 8px;
+    }
+    .step-connector.done { background: var(--green); }
+
+    /* ── Step panels ─────────────────────────────────────────────────────────── */
+    .step-panel { display: none; }
+    .step-panel.active { display: block; }
+
+    /* ── OpenRouter model loader ─────────────────────────────────────────────── */
+    .load-models-btn { width: auto; padding: 8px 16px; font-size: 12px; font-weight: 600; margin-bottom: 0; box-shadow: none; }
+    .or-model-row { display: flex; align-items: flex-end; gap: 8px; }
+    .or-model-row select { flex: 1; margin-bottom: 0; }
+    #orModelWrap { display: none; margin-top: 12px; }
+
+    /* ── System Prompt section ───────────────────────────────────────────────── */
+    .system-prompt-section {
+      border: 1px solid rgba(249, 115, 22, 0.3);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+      background: linear-gradient(135deg, rgba(249, 115, 22, 0.04), transparent);
+    }
+    .system-prompt-section label { color: var(--orange); }
+    .system-prompt-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(249, 115, 22, 0.12);
+      border: 1px solid rgba(249, 115, 22, 0.3);
+      padding: 4px 12px;
+      border-radius: 100px;
+      font-size: 11px;
+      color: var(--orange);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 14px;
+    }
+    .system-prompt-badge::before { content: "⚙"; font-size: 12px; }
+
+    /* ── Delay slider ────────────────────────────────────────────────────────── */
+    .slider-wrap { display: flex; align-items: center; gap: 12px; }
+    input[type=range] { -webkit-appearance: none; appearance: none; height: 6px; background: var(--surface2); border-radius: 3px; border: none; padding: 0; margin-bottom: 0; cursor: pointer; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; background: var(--accent); border-radius: 50%; cursor: pointer; }
+    .slider-val { min-width: 38px; text-align: right; font-weight: 700; color: var(--accent); font-size: 14px; }
+
+    /* ── Column mapper table ─────────────────────────────────────────────────── */
+    .mapper-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    .mapper-table th { text-align: left; font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 600; letter-spacing: 0.06em; padding: 10px 12px; background: var(--surface2); }
+    .mapper-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; background: var(--surface); }
+    .mapper-table td select { margin-bottom: 0; font-size: 13px; }
+    .required-badge { display: inline-block; background: rgba(37,99,235,0.15); color: var(--accent-light); border: 1px solid rgba(37,99,235,0.3); border-radius: 100px; font-size: 10px; font-weight: 700; padding: 1px 8px; text-transform: uppercase; letter-spacing: 0.04em; margin-left: 6px; vertical-align: middle; }
+    .warn-badge { display: inline-block; background: rgba(242,180,60,0.15); color: var(--gold); border: 1px solid rgba(242,180,60,0.3); border-radius: 100px; font-size: 10px; font-weight: 700; padding: 1px 8px; text-transform: uppercase; letter-spacing: 0.04em; margin-left: 6px; vertical-align: middle; }
+    .opt-badge { display: inline-block; background: rgba(107,114,128,0.15); color: var(--text-dim); border: 1px solid var(--border); border-radius: 100px; font-size: 10px; font-weight: 700; padding: 1px 8px; text-transform: uppercase; letter-spacing: 0.04em; margin-left: 6px; vertical-align: middle; }
+
+    /* ── Upload zone ─────────────────────────────────────────────────────────── */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--accent);
+      background: var(--accent-glow);
+    }
+    .upload-zone p { color: var(--text-muted); font-size: 14px; }
+    .upload-zone .upload-icon { font-size: 36px; margin-bottom: 12px; opacity: 0.6; }
+    .file-info { margin-top: 14px; padding: 12px 16px; background: var(--surface2); border-radius: 8px; font-size: 13px; color: var(--green); display: none; }
+
+    /* ── Batch runner progress ───────────────────────────────────────────────── */
+    .progress-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .progress-label { font-size: 14px; color: var(--text-muted); margin-bottom: 10px; }
+    .progress-label strong { color: var(--text); }
+    .countdown-bar-wrap { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; margin-top: 10px; }
+    .countdown-bar { height: 100%; width: 100%; background: var(--accent); border-radius: 3px; transition: width linear; }
+    .batch-controls { display: flex; gap: 10px; margin-top: 14px; }
+    .batch-controls button { padding: 10px 24px; font-size: 13px; }
+
+    /* ── Results table ───────────────────────────────────────────────────────── */
+    .results-section { display: none; }
+    .results-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .results-table th { background: var(--surface2); padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 600; letter-spacing: 0.05em; white-space: nowrap; }
+    .results-table td { padding: 10px 12px; border-bottom: 1px solid rgba(74,82,92,0.4); vertical-align: top; }
+    .row-pass { background: rgba(16,185,129,0.08); }
+    .row-warn { background: rgba(242,180,60,0.08); }
+    .row-fail { background: rgba(239,68,68,0.08); }
+    .row-error { background: rgba(239,68,68,0.05); color: var(--text-dim); }
+    .score-badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 100px;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .expand-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; box-shadow: none; }
+    .expand-btn:hover { background: var(--border); color: var(--text); }
+    .row-detail { display: none; }
+    .row-detail td { background: var(--bg); border-bottom: 2px solid var(--border); padding: 16px 20px; }
+    .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 14px; }
+    .detail-dim { background: var(--surface); border-radius: 8px; padding: 14px; border: 1px solid var(--border); }
+    .detail-dim-title { font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 600; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .detail-dim-score { font-size: 20px; font-weight: 800; }
+    .detail-dim-reason { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.5; }
+    .violations-list { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); border-radius: 8px; padding: 12px 16px; margin-top: 10px; }
+    .violations-list p { font-size: 11px; text-transform: uppercase; color: var(--red); font-weight: 700; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .improvements-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 10px; }
+    .improvements-box { background: var(--surface); border-radius: 8px; padding: 12px 16px; border: 1px solid var(--border); }
+    .improvements-box .box-title { font-size: 11px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; margin-bottom: 8px; }
+
+    /* ── Summary grid ────────────────────────────────────────────────────────── */
+    .summary-section { display: none; margin-top: 24px; }
+    .summary-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 20px; }
+    @media (max-width: 768px) { .summary-grid { grid-template-columns: repeat(3, 1fr); } }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; text-align: center; }
+    .stat-card .stat-num { font-size: 36px; font-weight: 800; line-height: 1; margin-bottom: 6px; }
+    .stat-card .stat-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
+    .export-row { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; }
+    .export-row button { padding: 12px 28px; font-size: 14px; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-badge">Batch QA Runner</div>
+    <h1 style="margin-top:14px; font-size:26px;">LLM Batch Evaluator</h1>
+    <p style="color:var(--text-muted); margin-top:6px;">Process an entire CSV/Excel file of prompt+response pairs sequentially.</p>
+  </div>
+
+  <!-- Step bar -->
+  <div class="step-bar" id="stepBar">
+    <div class="step-item active" id="stepItem1">
+      <div class="step-num">1</div>
+      <span>Evaluator Setup</span>
+    </div>
+    <div class="step-connector" id="conn1"></div>
+    <div class="step-item" id="stepItem2">
+      <div class="step-num">2</div>
+      <span>System Prompt</span>
+    </div>
+    <div class="step-connector" id="conn2"></div>
+    <div class="step-item" id="stepItem3">
+      <div class="step-num">3</div>
+      <span>Upload &amp; Map</span>
+    </div>
+  </div>
+
+  <!-- ── Step 1: Evaluator Setup ──────────────────────────────────────────── -->
+  <div class="step-panel active" id="step1">
+    <div class="card">
+      <div class="fields-row">
+        <div>
+          <label>Evaluator LLM</label>
+          <select id="providerSelect" onchange="onProviderChange()">
+            <option value="gemini">Google Gemini</option>
+            <option value="anthropic">Anthropic Claude</option>
+            <option value="openrouter">OpenRouter</option>
+          </select>
+        </div>
+        <div>
+          <label id="apiKeyLabel">Google Cloud API Key</label>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <input type="password" id="apiKey" placeholder="AIzaSy..." style="margin-bottom:0; flex:1;">
+            <button id="loadModelsBtn" class="secondary load-models-btn" onclick="loadOpenRouterModels()" style="display:none; white-space:nowrap;">Load Models</button>
+          </div>
+          <div id="modelIdWrap">
+            <label for="evaluatorModelId" style="margin-top:12px;">Evaluator Model ID</label>
+            <input type="text" id="evaluatorModelId" value="gemini-2.5-pro" spellcheck="false" autocomplete="off">
+          </div>
+            <div id="orModelWrap">
+            <label style="margin-top:12px;">OpenRouter Model</label>
+            <input type="text" id="orFilter" placeholder="Filter models..." style="margin-bottom:6px;" oninput="filterOrModels()">
+            <select id="orModel"><option value="">— select a model —</option></select>
+          </div>
+        </div>
+      </div>
+      <div>
+        <label>Delay Between Calls <span style="color:var(--text-dim); font-weight:400; font-size:11px; text-transform:none;">(seconds, to avoid rate limits)</span></label>
+        <div class="slider-wrap">
+          <input type="range" id="delaySlider" min="1" max="30" value="3" oninput="document.getElementById('delayVal').textContent=this.value+'s'" style="flex:1;">
+          <span class="slider-val" id="delayVal">3s</span>
+        </div>
+      </div>
+    </div>
+    <div class="btn-wrap">
+      <button onclick="goToStep(2)">Next →</button>
+    </div>
+  </div>
+
+  <!-- ── Step 2: System Prompt ────────────────────────────────────────────── -->
+  <div class="step-panel" id="step2">
+    <div class="system-prompt-section">
+      <div class="system-prompt-badge">System Prompt</div>
+      <label>System Prompt <span style="color:var(--text-dim); font-weight:400; font-size:11px; text-transform:none;">(Optional)</span></label>
+      <p style="font-size:11px; color:var(--text-dim); margin-bottom:14px; font-style:italic;">Paste the full system prompt sent to the LLM — guardrails, fallback instructions, tone rules, restrictions, and persona directives will be automatically detected and scored across all rows.</p>
+      <textarea id="systemPromptText" rows="10" placeholder="e.g. You are a helpful assistant. You must never discuss competitor products. If asked about pricing, always direct the user to the sales team. Always respond in a professional tone..."></textarea>
+    </div>
+    <div class="btn-wrap">
+      <button class="secondary" onclick="goToStep(1)">← Back</button>
+      <button onclick="goToStep(3)">Next →</button>
+    </div>
+  </div>
+
+  <!-- ── Step 3: Upload & Map ──────────────────────────────────────────────── -->
+  <div class="step-panel" id="step3">
+    <div class="card">
+      <label>Upload File</label>
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+        <div class="upload-icon">📂</div>
+        <p><strong>Click to browse</strong> or drag &amp; drop here</p>
+        <p style="font-size:12px; margin-top:6px; color:var(--text-dim);">Accepts .csv, .xlsx, .xls</p>
+      </div>
+      <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" style="display:none;" onchange="handleFileInput(event)">
+      <div class="file-info" id="fileInfo"></div>
+    </div>
+
+    <div class="card" id="mapperCard" style="display:none;">
+      <label>Column Mapping</label>
+      <p style="font-size:13px; color:var(--text-muted); margin-bottom:4px;">Map your CSV/Excel columns to the required fields. Required fields must be mapped to run.</p>
+      <table class="mapper-table">
+        <thead>
+          <tr>
+            <th>Evaluator Field</th>
+            <th>Your Column</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>User Prompt <span class="required-badge">Required</span> <span class="warn-badge" id="warnPrompt" style="display:none;">Not mapped</span></td>
+            <td><select id="mapPrompt" onchange="onMapChange()"><option value="">— not mapped —</option></select></td>
+          </tr>
+          <tr>
+            <td>LLM Response <span class="required-badge">Required</span> <span class="warn-badge" id="warnResponse" style="display:none;">Not mapped</span></td>
+            <td><select id="mapResponse" onchange="onMapChange()"><option value="">— not mapped —</option></select></td>
+          </tr>
+          <tr>
+            <td>Model Under Test <span class="opt-badge">Optional</span></td>
+            <td><select id="mapModel" onchange="onMapChange()"><option value="">— not mapped —</option></select></td>
+          </tr>
+          <tr>
+            <td>RAG Context <span class="opt-badge">Optional</span></td>
+            <td><select id="mapRag" onchange="onMapChange()"><option value="">— not mapped —</option></select></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="btn-wrap">
+      <button class="secondary" onclick="goToStep(2)">← Back</button>
+      <button id="runBtn" onclick="startBatch()" disabled>▶ Run Batch Evaluation</button>
+    </div>
+  </div>
+
+  <!-- ── Batch runner progress ─────────────────────────────────────────────── -->
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-label" id="progressLabel">Preparing...</div>
+    <div class="countdown-bar-wrap">
+      <div class="countdown-bar" id="countdownBar"></div>
+    </div>
+    <div class="batch-controls">
+      <button class="secondary" id="pauseBtn" onclick="togglePause()" style="padding:10px 24px; font-size:13px;">⏸ Pause</button>
+      <button class="secondary" id="stopBtn" onclick="stopBatch()" style="padding:10px 24px; font-size:13px; color:var(--red);">■ Stop</button>
+    </div>
+  </div>
+
+  <!-- ── Results section ────────────────────────────────────────────────────── -->
+  <div class="results-section" id="resultsSection">
+    <div class="card" style="padding: 0; overflow: hidden;">
+      <table class="results-table" id="resultsTable">
+        <thead>
+          <tr>
+            <th style="width:36px;">#</th>
+            <th>Model</th>
+            <th style="width:80px;">Overall</th>
+            <th style="width:80px;">Relevance</th>
+            <th style="width:60px;">Tone</th>
+            <th style="width:80px;">Grounded</th>
+            <th style="width:80px;">SP Adh.</th>
+            <th>Verdict</th>
+            <th style="width:90px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="resultsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Summary section ───────────────────────────────────────────────────── -->
+  <div class="summary-section" id="summarySection">
+    <div class="card" style="border-top: 4px solid var(--accent);">
+      <h2 style="margin-bottom:20px; font-size:18px;">Batch Complete</h2>
+      <div class="summary-grid" id="summaryGrid"></div>
+      <div class="export-row">
+        <button class="secondary" onclick="exportCsv()">⬇ Export CSV</button>
+        <button class="secondary" onclick="exportDocx()">⬇ Export DOCX Report</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /.container -->
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+let currentStep = 1;
+let parsedRows = [];        // raw data rows (arrays) from SheetJS
+let parsedHeaders = [];     // first row headers
+let columnMap = {};         // { prompt, response, model, ragContext } → col index or -1
+let allResults = [];        // { rowIndex, inputs, result, error, elapsed }
+let isRunning = false;
+let isPaused = false;
+let shouldStop = false;
+let openrouterAllModels = [];
+let selectedOrModel = '';   // stored model ID for batch use
+
+// ── Step navigation ──────────────────────────────────────────────────────────
+function goToStep(n) {
+  // Validate before advancing
+  if (n === 2 && currentStep === 1) {
+    const key = document.getElementById('apiKey').value.trim();
+    if (!key) { alert('Please enter your API key before continuing.'); return; }
+    if (document.getElementById('providerSelect').value === 'openrouter') {
+      selectedOrModel = document.getElementById('orModel').value;
+      if (!selectedOrModel) { alert('Please select an OpenRouter model before continuing.'); return; }
+    }
+  }
+  currentStep = n;
+  document.querySelectorAll('.step-panel').forEach((p, i) => {
+    p.classList.toggle('active', i + 1 === n);
+  });
+  updateStepBar();
+}
+
+function updateStepBar() {
+  for (let i = 1; i <= 3; i++) {
+    const item = document.getElementById('stepItem' + i);
+    item.classList.remove('active', 'done');
+    if (i === currentStep) item.classList.add('active');
+    else if (i < currentStep) item.classList.add('done');
+  }
+  for (let i = 1; i <= 2; i++) {
+    const conn = document.getElementById('conn' + i);
+    conn.classList.toggle('done', i < currentStep);
+  }
+}
+
+// ── Provider change ──────────────────────────────────────────────────────────
+const PROVIDERS = {
+  gemini:     { keyLabel: 'Google Cloud API Key',   keyPlaceholder: 'AIzaSy...',  defaultModel: 'gemini-2.5-pro' },
+  anthropic:  { keyLabel: 'Anthropic API Key',      keyPlaceholder: 'sk-ant-...', defaultModel: 'claude-sonnet-4-5' },
+  openrouter: { keyLabel: 'OpenRouter API Key',     keyPlaceholder: 'sk-or-...' }
+};
+
+// Evaluator model is editable so a retired model ID never breaks the tool
+function getEvaluatorModel(provider) {
+  const v = document.getElementById('evaluatorModelId').value.trim();
+  return v || PROVIDERS[provider].defaultModel;
+}
+
+function onProviderChange() {
+  const provider = document.getElementById('providerSelect').value;
+  const cfg = PROVIDERS[provider];
+  document.getElementById('apiKeyLabel').innerText = cfg.keyLabel;
+  document.getElementById('apiKey').placeholder = cfg.keyPlaceholder;
+  document.getElementById('apiKey').value = '';
+  const isOR = provider === 'openrouter';
+  document.getElementById('loadModelsBtn').style.display = isOR ? 'inline-flex' : 'none';
+  document.getElementById('orModelWrap').style.display = 'none';
+  const modelInput = document.getElementById('evaluatorModelId');
+  modelInput.value = cfg.defaultModel || '';
+  document.getElementById('modelIdWrap').style.display = isOR ? 'none' : 'block';
+  document.getElementById('orModel').innerHTML = '<option value="">— select a model —</option>';
+}
+
+async function loadOpenRouterModels() {
+  const key = document.getElementById('apiKey').value.trim();
+  if (!key) { alert('Enter your OpenRouter API key first.'); return; }
+  const btn = document.getElementById('loadModelsBtn');
+  btn.innerText = 'Loading...'; btn.disabled = true;
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/models', {
+      headers: { 'Authorization': `Bearer ${key}` }
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+    const models = data.data.sort((a, b) => {
+      const af = a.id.endsWith(':free'), bf = b.id.endsWith(':free');
+      if (af && !bf) return -1; if (!af && bf) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    openrouterAllModels = models;
+    populateOrSelect(models);
+    document.getElementById('orModelWrap').style.display = 'block';
+    btn.innerText = `${models.length} models loaded`;
+  } catch(e) {
+    alert('Failed to load models: ' + e.message);
+    btn.innerText = 'Load Models';
+  } finally { btn.disabled = false; }
+}
+
+function populateOrSelect(models) {
+  const sel = document.getElementById('orModel');
+  sel.innerHTML = '<option value="">— select a model —</option>';
+  models.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.innerText = (m.id.endsWith(':free') ? '✦ ' : '') + m.name;
+    sel.appendChild(opt);
+  });
+}
+
+function filterOrModels() {
+  const q = document.getElementById('orFilter').value.toLowerCase();
+  populateOrSelect(q ? openrouterAllModels.filter(m =>
+    m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q)
+  ) : openrouterAllModels);
+}
+
+// ── File upload ───────────────────────────────────────────────────────────────
+function onDragOver(e) { e.preventDefault(); document.getElementById('uploadZone').classList.add('drag-over'); }
+function onDragLeave(e) { document.getElementById('uploadZone').classList.remove('drag-over'); }
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById('uploadZone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+}
+function handleFileInput(e) { const file = e.target.files[0]; if (file) handleFile(file); }
+
+function handleFile(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      if (!raw || raw.length < 2) { alert('File appears to be empty or has no data rows.'); return; }
+
+      parsedHeaders = raw[0].map(h => String(h).trim());
+      parsedRows = raw.slice(1).filter(row => row.some(cell => String(cell).trim() !== ''));
+
+      const fi = document.getElementById('fileInfo');
+      fi.style.display = 'block';
+      fi.textContent = `Loaded: ${file.name} — ${parsedRows.length} row${parsedRows.length !== 1 ? 's' : ''}`;
+
+      document.getElementById('mapperCard').style.display = 'block';
+      buildMapper(parsedHeaders);
+    } catch(err) {
+      alert('Failed to parse file: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ── Column mapper ─────────────────────────────────────────────────────────────
+const ALIASES = {
+  prompt:     ['prompt', 'user_prompt', 'question', 'input', 'query'],
+  response:   ['response', 'llm_response', 'answer', 'output', 'completion'],
+  model:      ['model', 'model_under_test', 'model_name'],
+  ragContext: ['rag_context', 'context', 'grounding_doc', 'rag']
+};
+
+function autoDetect(headers, field) {
+  const alts = ALIASES[field];
+  for (let i = 0; i < headers.length; i++) {
+    if (alts.includes(headers[i].toLowerCase().replace(/\s+/g, '_'))) return String(i);
+  }
+  return '';
+}
+
+function buildMapper(headers) {
+  const selects = {
+    prompt: document.getElementById('mapPrompt'),
+    response: document.getElementById('mapResponse'),
+    model: document.getElementById('mapModel'),
+    ragContext: document.getElementById('mapRag')
+  };
+
+  // Build options for each select
+  ['prompt', 'response', 'model', 'ragContext'].forEach(field => {
+    const sel = selects[field];
+    sel.innerHTML = '<option value="">— not mapped —</option>';
+    headers.forEach((h, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = h;
+      sel.appendChild(opt);
+    });
+    // Auto-detect
+    const detected = autoDetect(headers, field);
+    if (detected !== '') sel.value = detected;
+  });
+
+  onMapChange();
+}
+
+function onMapChange() {
+  const p = document.getElementById('mapPrompt').value;
+  const r = document.getElementById('mapResponse').value;
+
+  document.getElementById('warnPrompt').style.display = p === '' ? 'inline-block' : 'none';
+  document.getElementById('warnResponse').style.display = r === '' ? 'inline-block' : 'none';
+
+  document.getElementById('runBtn').disabled = (p === '' || r === '');
+
+  columnMap = {
+    prompt:     p !== '' ? parseInt(p) : -1,
+    response:   r !== '' ? parseInt(r) : -1,
+    model:      document.getElementById('mapModel').value !== '' ? parseInt(document.getElementById('mapModel').value) : -1,
+    ragContext: document.getElementById('mapRag').value !== '' ? parseInt(document.getElementById('mapRag').value) : -1
+  };
+}
+
+// ── Evaluation prompt ─────────────────────────────────────────────────────────
+const SYSTEM_PROMPT = `You are a critical LLM evaluator.
+Evaluate the following dimensions:
+1. Relevance — Does the response answer the prompt?
+2. Tone — Is the tone appropriate and consistent?
+3. Groundedness — ONLY if RAG Context is provided: does the response stay grounded in the provided context? If RAG context is provided and the response matches it, treat this as a correct grounded answer. Do NOT penalise as hallucination.
+4. System Prompt Adherence — ONLY if a System Prompt is provided: carefully parse the system prompt for ALL instructions including guardrails, fallback behaviors, tone/persona directives, formatting rules, and restrictions. Score how well the LLM response followed every instruction.
+   IMPORTANT hallucination rule: If RAG context IS provided and the response is grounded in it, do NOT flag the response as a hallucination or fabrication violation — treat it as a legitimate RAG retrieval. Only flag hallucination as a violation if NO RAG context was provided AND the response contains factual information that cannot be verified from any provided input.
+   IMPORTANT formatting note: In the response text, **text** denotes bold formatting, "1. item" denotes a numbered list item, and "• item" denotes a bullet list item.
+
+Return ONLY valid JSON with no markdown, no code fences, no preamble:
+{
+  "relevance_score": 0-100, "relevance_reasoning": "...",
+  "tone_score": 0-100, "tone_reasoning": "...",
+  "groundedness_score": 0-100 or null, "groundedness_reasoning": "...",
+  "system_prompt_adherence_score": 0-100 or null, "system_prompt_adherence_reasoning": "...",
+  "system_prompt_instructions_detected": ["instruction 1", "instruction 2", "..."],
+  "system_prompt_violations": ["violation 1 if any", "..."],
+  "overall_score": 0-100,
+  "verdict": "...",
+  "response_improvements": ["...", "...", "..."],
+  "prompt_refinements": ["...", "...", "..."]
+}
+If Groundedness input is missing, set groundedness_score to null.
+If System Prompt input is missing, set system_prompt_adherence_score to null and both array fields to empty arrays.
+Be strictly critical and enumerate every detected instruction and every confirmed violation.`;
+
+// ── API: clean JSON from response ─────────────────────────────────────────────
+function stripFences(text) {
+  let cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error('Model returned plain text instead of JSON. This model does not support structured output and cannot be used as an evaluator.');
+  }
+  cleaned = cleaned.slice(start, end + 1);
+  cleaned = cleaned.replace(/(\d+\.)([,}\]\s])/g, '$10$2');
+  return cleaned;
+}
+
+// ── API calls ─────────────────────────────────────────────────────────────────
+async function callGemini(key, userContent) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(getEvaluatorModel('gemini'))}:generateContent?key=${key}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [{ parts: [{ text: userContent }] }],
+      generationConfig: { responseMimeType: 'application/json', temperature: 0 }
+    })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  const raw = data.candidates[0].content.parts[0].text;
+  console.log('[Gemini raw]', raw);
+  return JSON.parse(stripFences(raw));
+}
+
+async function callAnthropic(key, userContent) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: getEvaluatorModel('anthropic'),
+      max_tokens: 4096,
+      temperature: 0,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userContent }]
+    })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+  const raw = data.content[0].text;
+  console.log('[Anthropic raw]', raw);
+  return JSON.parse(stripFences(raw));
+}
+
+async function callOpenRouter(key, model, userContent) {
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`,
+      'HTTP-Referer': window.location.href,
+      'X-Title': 'LLM Batch Evaluator'
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: [{ role: 'user', content: SYSTEM_PROMPT + '\n\n' + userContent }],
+      temperature: 0
+    })
+  });
+  const data = await res.json();
+  if (data.error) {
+    const detail = typeof data.error === 'object'
+      ? `${data.error.message || ''} (code: ${data.error.code || 'unknown'})${data.error.metadata ? ' — ' + JSON.stringify(data.error.metadata) : ''}`
+      : JSON.stringify(data.error);
+    throw new Error(detail);
+  }
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error('No content returned. Full response: ' + JSON.stringify(data));
+  console.log('[OpenRouter raw]', content);
+  return JSON.parse(stripFences(content));
+}
+
+// ── Batch runner ──────────────────────────────────────────────────────────────
+async function startBatch() {
+  onMapChange(); // ensure columnMap up to date
+  if (columnMap.prompt === -1 || columnMap.response === -1) {
+    alert('Please map the required columns (User Prompt and LLM Response) before running.');
+    return;
+  }
+
+  allResults = [];
+  isRunning = true;
+  isPaused = false;
+  shouldStop = false;
+
+  // Hide all steps, show progress
+  document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('stepBar').style.display = 'none';
+  document.getElementById('progressWrap').style.display = 'block';
+  document.getElementById('resultsSection').style.display = 'block';
+  document.getElementById('resultsBody').innerHTML = '';
+  document.getElementById('summarySection').style.display = 'none';
+
+  const provider = document.getElementById('providerSelect').value;
+  const key = document.getElementById('apiKey').value.trim();
+  const systemPrompt = document.getElementById('systemPromptText').value.trim();
+  const delayMs = parseInt(document.getElementById('delaySlider').value) * 1000;
+
+  await runBatch(provider, key, systemPrompt, delayMs);
+}
+
+async function runBatch(provider, key, systemPrompt, delayMs) {
+  const total = parsedRows.length;
+
+  for (let i = 0; i < total; i++) {
+    if (shouldStop) break;
+    while (isPaused) await sleep(200);
+
+    updateProgress(i + 1, total, `Evaluating row ${i + 1} of ${total}...`);
+
+    const row = parsedRows[i];
+    const inputs = {
+      prompt:     columnMap.prompt !== -1 ? String(row[columnMap.prompt] || '').trim() : '',
+      response:   columnMap.response !== -1 ? String(row[columnMap.response] || '').trim() : '',
+      model:      columnMap.model !== -1 ? String(row[columnMap.model] || '').trim() : '',
+      ragContext: columnMap.ragContext !== -1 ? String(row[columnMap.ragContext] || '').trim() : ''
+    };
+
+    if (!inputs.prompt || !inputs.response) {
+      appendErrorRow(i, inputs, 'Row skipped: prompt or response is empty.');
+      allResults.push({ rowIndex: i, inputs, result: null, error: 'Row skipped: prompt or response is empty.', elapsed: 0 });
+      continue;
+    }
+
+    const userContent = buildUserContent(inputs, systemPrompt);
+
+    const t0 = performance.now();
+    try {
+      let result;
+      if (provider === 'gemini') result = await callGemini(key, userContent);
+      else if (provider === 'anthropic') result = await callAnthropic(key, userContent);
+      else if (provider === 'openrouter') result = await callOpenRouter(key, selectedOrModel, userContent);
+
+      const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+      allResults.push({ rowIndex: i, inputs, result, error: null, elapsed });
+      appendResultRow(i, inputs, result, elapsed);
+    } catch(e) {
+      const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+      allResults.push({ rowIndex: i, inputs, result: null, error: e.message, elapsed });
+      appendErrorRow(i, inputs, e.message);
+    }
+
+    if (i < total - 1 && !shouldStop) {
+      updateProgress(i + 1, total, `Waiting ${Math.round(delayMs / 1000)}s before next call...`);
+      await countdown(delayMs);
+    }
+  }
+
+  isRunning = false;
+  document.getElementById('progressWrap').style.display = 'none';
+  showSummary();
+}
+
+function buildUserContent(inputs, systemPrompt) {
+  return `PROMPT: ${inputs.prompt}\n\nRESPONSE: ${inputs.response}\n\nRAG CONTEXT: ${inputs.ragContext || 'Not provided'}\n\nSYSTEM PROMPT: ${systemPrompt || 'Not provided'}`;
+}
+
+function updateProgress(current, total, label) {
+  document.getElementById('progressLabel').innerHTML = `<strong>${label}</strong> (${current} / ${total})`;
+}
+
+function togglePause() {
+  isPaused = !isPaused;
+  document.getElementById('pauseBtn').textContent = isPaused ? '▶ Resume' : '⏸ Pause';
+}
+
+function stopBatch() {
+  shouldStop = true;
+  isPaused = false;
+  document.getElementById('pauseBtn').textContent = '⏸ Pause';
+}
+
+async function countdown(ms) {
+  const bar = document.getElementById('countdownBar');
+  bar.style.transition = 'none';
+  bar.style.width = '100%';
+  // Small reflow so transition fires
+  void bar.offsetWidth;
+  bar.style.transition = `width ${ms}ms linear`;
+  bar.style.width = '0%';
+
+  const interval = 50;
+  let elapsed = 0;
+  while (elapsed < ms) {
+    if (shouldStop) break;
+    while (isPaused) {
+      // Pause the bar — freeze current width
+      const current = bar.style.width;
+      bar.style.transition = 'none';
+      bar.style.width = current;
+      await sleep(200);
+      if (!isPaused) {
+        // Resume: recalculate remaining time
+        const remaining = ms - elapsed;
+        void bar.offsetWidth;
+        bar.style.transition = `width ${remaining}ms linear`;
+        bar.style.width = '0%';
+        break;
+      }
+    }
+    await sleep(interval);
+    elapsed += interval;
+  }
+  bar.style.transition = 'none';
+  bar.style.width = '100%';
+}
+
+// ── Results table ─────────────────────────────────────────────────────────────
+function scoreClass(n) {
+  if (n === null || n === undefined) return '';
+  if (n >= 86) return 'row-pass';
+  if (n >= 76) return 'row-warn';
+  return 'row-fail';
+}
+
+function scoreColor(n) {
+  if (n === null || n === undefined) return 'var(--text-dim)';
+  if (n >= 86) return 'var(--green)';
+  if (n >= 76) return 'var(--yellow)';
+  return 'var(--red)';
+}
+
+function scoreBadge(n) {
+  if (n === null || n === undefined) return '<span style="color:var(--text-dim)">—</span>';
+  return `<span class="score-badge" style="color:${scoreColor(n)}; background:${scoreColor(n)}20;">${n}</span>`;
+}
+
+function appendResultRow(rowIndex, inputs, result, elapsed) {
+  const tbody = document.getElementById('resultsBody');
+  const rowClass = scoreClass(result.overall_score);
+  const detailId = `detail-${rowIndex}`;
+
+  const tr = document.createElement('tr');
+  tr.className = rowClass;
+  tr.innerHTML = `
+    <td style="color:var(--text-dim);">${rowIndex + 1}</td>
+    <td style="font-size:12px; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(inputs.model)}">${inputs.model || '<span style="color:var(--text-dim)">—</span>'}</td>
+    <td>${scoreBadge(result.overall_score)}</td>
+    <td>${scoreBadge(result.relevance_score)}</td>
+    <td>${scoreBadge(result.tone_score)}</td>
+    <td>${result.groundedness_score !== null && result.groundedness_score !== undefined ? scoreBadge(result.groundedness_score) : '<span style="color:var(--text-dim)">—</span>'}</td>
+    <td>${result.system_prompt_adherence_score !== null && result.system_prompt_adherence_score !== undefined ? scoreBadge(result.system_prompt_adherence_score) : '<span style="color:var(--text-dim)">—</span>'}</td>
+    <td style="font-size:12px; color:var(--text-muted);">${esc(result.verdict || '')}</td>
+    <td><button class="expand-btn" onclick="toggleDetail('${detailId}', this)">Details ▼</button></td>
+  `;
+
+  const detailTr = document.createElement('tr');
+  detailTr.className = 'row-detail';
+  detailTr.id = detailId;
+  detailTr.innerHTML = `<td colspan="9">${buildDetailHtml(inputs, result, elapsed)}</td>`;
+
+  tbody.appendChild(tr);
+  tbody.appendChild(detailTr);
+}
+
+function appendErrorRow(rowIndex, inputs, errorMessage) {
+  const tbody = document.getElementById('resultsBody');
+  const detailId = `detail-err-${rowIndex}`;
+
+  const tr = document.createElement('tr');
+  tr.className = 'row-error';
+  tr.innerHTML = `
+    <td style="color:var(--text-dim);">${rowIndex + 1}</td>
+    <td style="font-size:12px;">${inputs.model || '<span style="color:var(--text-dim)">—</span>'}</td>
+    <td colspan="6" style="color:var(--red); font-size:12px;">ERROR</td>
+    <td><button class="expand-btn" onclick="toggleDetail('${detailId}', this)">Details ▼</button></td>
+  `;
+
+  const detailTr = document.createElement('tr');
+  detailTr.className = 'row-detail';
+  detailTr.id = detailId;
+  detailTr.innerHTML = `<td colspan="9">
+    <div style="padding:4px 0;">
+      <p style="font-size:12px; color:var(--text-muted); margin-bottom:8px;"><strong>Prompt:</strong> ${esc(inputs.prompt.substring(0, 200))}${inputs.prompt.length > 200 ? '…' : ''}</p>
+      <p style="color:var(--red); font-size:13px;"><strong>Error:</strong> ${esc(errorMessage)}</p>
+    </div>
+  </td>`;
+
+  tbody.appendChild(tr);
+  tbody.appendChild(detailTr);
+}
+
+function buildDetailHtml(inputs, result, elapsed) {
+  let dims = '';
+  const addDim = (title, score, reason) => {
+    if (score === null || score === undefined) return;
+    dims += `<div class="detail-dim">
+      <div class="detail-dim-title">${title}</div>
+      <div class="detail-dim-score" style="color:${scoreColor(score)}">${score}</div>
+      <div class="detail-dim-reason">${esc(reason || '')}</div>
+    </div>`;
+  };
+  addDim('Relevance', result.relevance_score, result.relevance_reasoning);
+  addDim('Tone', result.tone_score, result.tone_reasoning);
+  if (result.groundedness_score !== null && result.groundedness_score !== undefined)
+    addDim('Groundedness', result.groundedness_score, result.groundedness_reasoning);
+  if (result.system_prompt_adherence_score !== null && result.system_prompt_adherence_score !== undefined)
+    addDim('SP Adherence', result.system_prompt_adherence_score, result.system_prompt_adherence_reasoning);
+
+  const violations = result.system_prompt_violations || [];
+  const violHtml = violations.length > 0
+    ? `<div class="violations-list"><p>Violations (${violations.length})</p><ul style="font-size:13px; padding-left:18px;">${violations.map(v => `<li style="color:var(--red); margin-bottom:4px;">${esc(v)}</li>`).join('')}</ul></div>` : '';
+
+  const respImprov = (result.response_improvements || []);
+  const promptImprov = (result.prompt_refinements || []);
+  const improvHtml = (respImprov.length || promptImprov.length) ? `
+    <div class="improvements-row">
+      <div class="improvements-box" style="border-top:3px solid var(--purple);">
+        <div class="box-title" style="color:var(--purple);">Response Improvements</div>
+        <ul style="font-size:13px; color:var(--text-muted); padding-left:18px;">${respImprov.map(i => `<li style="margin-bottom:4px;">${esc(i)}</li>`).join('')}</ul>
+      </div>
+      <div class="improvements-box" style="border-top:3px solid var(--teal);">
+        <div class="box-title" style="color:var(--teal);">Prompt Refinements</div>
+        <ul style="font-size:13px; color:var(--text-muted); padding-left:18px;">${promptImprov.map(i => `<li style="margin-bottom:4px;">${esc(i)}</li>`).join('')}</ul>
+      </div>
+    </div>` : '';
+
+  return `
+    <div>
+      <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;"><strong>Prompt:</strong> ${esc(inputs.prompt.substring(0, 200))}${inputs.prompt.length > 200 ? '…' : ''} &nbsp;|&nbsp; <strong>Eval time:</strong> ${elapsed}s</p>
+      <div class="detail-grid">${dims}</div>
+      ${violHtml}
+      ${improvHtml}
+    </div>`;
+}
+
+function toggleDetail(id, btn) {
+  const row = document.getElementById(id);
+  const visible = row.style.display === 'table-row';
+  row.style.display = visible ? 'none' : 'table-row';
+  btn.textContent = visible ? 'Details ▼' : 'Details ▲';
+}
+
+// ── Summary ───────────────────────────────────────────────────────────────────
+function showSummary() {
+  const evaluated = allResults.filter(r => r.result !== null);
+  const passed = evaluated.filter(r => r.result.overall_score >= 86).length;
+  const warned = evaluated.filter(r => r.result.overall_score >= 76 && r.result.overall_score < 86).length;
+  const failed = evaluated.filter(r => r.result.overall_score < 76).length;
+  const errored = allResults.filter(r => r.error !== null).length;
+  const scores = evaluated.map(r => r.result.overall_score).filter(s => s !== null && s !== undefined);
+  const avg = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '—';
+
+  const grid = document.getElementById('summaryGrid');
+  grid.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--text)">${allResults.length}</div>
+      <div class="stat-label">Total Evaluated</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--green)">${passed}</div>
+      <div class="stat-label">Passed (≥86)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--yellow)">${warned}</div>
+      <div class="stat-label">Warned (76–85)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--red)">${failed + errored}</div>
+      <div class="stat-label">Failed / Errors</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--accent)">${avg}</div>
+      <div class="stat-label">Avg Score</div>
+    </div>
+  `;
+
+  document.getElementById('summarySection').style.display = 'block';
+}
+
+// ── CSV export ────────────────────────────────────────────────────────────────
+const CSV_HEADERS = [
+  "Row #", "Model Under Test", "Evaluator LLM", "Eval Time (s)", "Original Prompt",
+  "Overall Score", "Verdict",
+  "Relevance Score", "Relevance Reasoning",
+  "Tone Score", "Tone Reasoning",
+  "Groundedness Score", "Groundedness Reasoning",
+  "System Prompt Adherence Score", "System Prompt Adherence Reasoning",
+  "System Prompt Instructions Detected", "System Prompt Violations",
+  "Response Improvements", "Prompt Refinements"
+];
+
+function escapeCsv(str) {
+  if (str === null || str === undefined || str === '') return '""';
+  return '"' + String(str).replace(/"/g, '""').replace(/\n/g, ' ') + '"';
+}
+
+function buildCsvRow(item) {
+  const r = item.result;
+  const provider = document.getElementById('providerSelect').value;
+  const evaluator = provider === 'openrouter' ? `openrouter/${selectedOrModel}` : provider;
+  if (!r) {
+    // Error row
+    return [
+      item.rowIndex + 1, escapeCsv(item.inputs.model), escapeCsv(evaluator),
+      item.elapsed, escapeCsv(item.inputs.prompt),
+      '', escapeCsv('ERROR: ' + item.error),
+      '', '', '', '', '', '', '', '', '', '', '', ''
+    ].join(',');
+  }
+  return [
+    item.rowIndex + 1,
+    escapeCsv(item.inputs.model),
+    escapeCsv(evaluator),
+    item.elapsed,
+    escapeCsv(item.inputs.prompt),
+    r.overall_score,
+    escapeCsv(r.verdict),
+    r.relevance_score,
+    escapeCsv(r.relevance_reasoning),
+    r.tone_score,
+    escapeCsv(r.tone_reasoning),
+    r.groundedness_score ?? '',
+    escapeCsv(r.groundedness_reasoning ?? ''),
+    r.system_prompt_adherence_score ?? '',
+    escapeCsv(r.system_prompt_adherence_reasoning ?? ''),
+    escapeCsv((r.system_prompt_instructions_detected || []).join(' | ')),
+    escapeCsv((r.system_prompt_violations || []).join(' | ')),
+    escapeCsv((r.response_improvements || []).join(' | ')),
+    escapeCsv((r.prompt_refinements || []).join(' | '))
+  ].join(',');
+}
+
+function exportCsv() {
+  if (allResults.length === 0) { alert('No results to export.'); return; }
+  const rows = allResults.map(buildCsvRow);
+  const csv = CSV_HEADERS.join(',') + '\n' + rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `llm_batch_eval_${Date.now()}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── DOCX export ───────────────────────────────────────────────────────────────
+async function exportDocx() {
+  if (allResults.length === 0) { alert('No results to export.'); return; }
+  if (!window.docx) { alert('DOCX library not loaded. Check your internet connection.'); return; }
+
+  const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, HeadingLevel, AlignmentType, BorderStyle } = window.docx;
+
+  const ACCENT_BLUE = '2563EB';
+  const PASS_GREEN   = '10b981';
+  const WARN_GOLD    = 'FBAD26';
+  const FAIL_RED     = 'ef4444';
+
+  function colorForScore(n) {
+    if (n === null || n === undefined) return '9CA3B0';
+    if (n >= 86) return PASS_GREEN;
+    if (n >= 76) return WARN_GOLD;
+    return FAIL_RED;
+  }
+
+  const evaluated = allResults.filter(r => r.result !== null);
+  const passed = evaluated.filter(r => r.result.overall_score >= 86).length;
+  const warned = evaluated.filter(r => r.result.overall_score >= 76 && r.result.overall_score < 86).length;
+  const failed = evaluated.filter(r => r.result.overall_score < 76).length;
+  const errored = allResults.filter(r => r.error !== null).length;
+  const scores = evaluated.map(r => r.result.overall_score).filter(s => s != null);
+  const avg = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : 'N/A';
+  const provider = document.getElementById('providerSelect').value;
+  const evaluator = provider === 'openrouter' ? `openrouter/${selectedOrModel}` : provider;
+
+  const sections = [];
+
+  // Title
+  sections.push(new Paragraph({
+    children: [new TextRun({ text: 'LLM Evaluation Batch Report', bold: true, size: 36, color: ACCENT_BLUE, font: 'Calibri' })],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 200 }
+  }));
+  sections.push(new Paragraph({
+    children: [new TextRun({ text: `Generated: ${new Date().toLocaleString()}  |  Evaluator: ${evaluator}  |  Total rows: ${allResults.length}`, size: 20, color: '6B7280', font: 'Calibri' })],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 400 }
+  }));
+
+  // Summary table
+  sections.push(new Paragraph({ children: [new TextRun({ text: 'Summary', bold: true, size: 26, color: ACCENT_BLUE, font: 'Calibri' })], spacing: { after: 160 } }));
+  sections.push(new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [
+      new TableRow({ children: [
+        mkCell('Passed (≥86)', PASS_GREEN, true),
+        mkCell('Warned (76-85)', WARN_GOLD, true),
+        mkCell('Failed / Errors', FAIL_RED, true),
+        mkCell('Avg Score', ACCENT_BLUE, true)
+      ]}),
+      new TableRow({ children: [
+        mkCell(String(passed), PASS_GREEN, false),
+        mkCell(String(warned), WARN_GOLD, false),
+        mkCell(String(failed + errored), FAIL_RED, false),
+        mkCell(avg, ACCENT_BLUE, false)
+      ]})
+    ]
+  }));
+  sections.push(new Paragraph({ spacing: { after: 400 } }));
+
+  // Per-row sections
+  sections.push(new Paragraph({ children: [new TextRun({ text: 'Individual Results', bold: true, size: 26, color: ACCENT_BLUE, font: 'Calibri' })], spacing: { after: 200 } }));
+
+  for (const item of allResults) {
+    const rowLabel = `Row ${item.rowIndex + 1}${item.inputs.model ? ' — ' + item.inputs.model : ''}`;
+    sections.push(new Paragraph({ children: [new TextRun({ text: rowLabel, bold: true, size: 22, font: 'Calibri' })], spacing: { before: 300, after: 100 } }));
+
+    const promptStr = item.inputs.prompt.substring(0, 200) + (item.inputs.prompt.length > 200 ? '…' : '');
+    sections.push(new Paragraph({ children: [new TextRun({ text: 'Prompt: ', bold: true, size: 18, font: 'Calibri' }), new TextRun({ text: promptStr, size: 18, font: 'Calibri', color: '9CA3B0' })], spacing: { after: 100 } }));
+
+    if (item.error) {
+      sections.push(new Paragraph({ children: [new TextRun({ text: 'ERROR: ' + item.error, size: 18, color: FAIL_RED, font: 'Calibri' })], spacing: { after: 200 } }));
+      continue;
+    }
+
+    const r = item.result;
+    sections.push(new Paragraph({ children: [
+      new TextRun({ text: `Overall Score: `, bold: true, size: 20, font: 'Calibri' }),
+      new TextRun({ text: String(r.overall_score), bold: true, size: 20, color: colorForScore(r.overall_score), font: 'Calibri' }),
+      new TextRun({ text: `  |  Verdict: ${r.verdict}`, size: 18, color: '9CA3B0', font: 'Calibri' })
+    ], spacing: { after: 100 } }));
+
+    // Dimension table
+    const dimRows = [new TableRow({ children: [mkCell('Dimension', ACCENT_BLUE, true), mkCell('Score', ACCENT_BLUE, true), mkCell('Reasoning', ACCENT_BLUE, true)] })];
+    const addDimRow = (name, score, reason) => {
+      if (score === null || score === undefined) return;
+      dimRows.push(new TableRow({ children: [
+        mkCell(name, null, false),
+        mkCell(String(score), colorForScore(score), false),
+        mkCell(reason || '', null, false)
+      ]}));
+    };
+    addDimRow('Relevance', r.relevance_score, r.relevance_reasoning);
+    addDimRow('Tone', r.tone_score, r.tone_reasoning);
+    if (r.groundedness_score !== null && r.groundedness_score !== undefined)
+      addDimRow('Groundedness', r.groundedness_score, r.groundedness_reasoning);
+    if (r.system_prompt_adherence_score !== null && r.system_prompt_adherence_score !== undefined)
+      addDimRow('SP Adherence', r.system_prompt_adherence_score, r.system_prompt_adherence_reasoning);
+    sections.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: dimRows }));
+
+    const violations = r.system_prompt_violations || [];
+    if (violations.length > 0) {
+      sections.push(new Paragraph({ children: [new TextRun({ text: 'Violations:', bold: true, size: 18, color: FAIL_RED, font: 'Calibri' })], spacing: { before: 160, after: 60 } }));
+      violations.forEach(v => sections.push(new Paragraph({ children: [new TextRun({ text: '• ' + v, size: 18, color: FAIL_RED, font: 'Calibri' })], spacing: { after: 40 } })));
+    }
+
+    sections.push(new Paragraph({ spacing: { after: 200 } }));
+  }
+
+  function mkCell(text, color, isHeader) {
+    return new TableCell({
+      children: [new Paragraph({ children: [new TextRun({ text, bold: isHeader, size: isHeader ? 18 : 18, color: color || '9CA3B0', font: 'Calibri' })] })],
+      shading: isHeader ? { fill: '252A2E' } : {}
+    });
+  }
+
+  const doc = new Document({ sections: [{ children: sections }] });
+  const blob = await Packer.toBlob(doc);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `llm_batch_report_${Date.now()}.docx`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function esc(str) {
+  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+</script>
+</body>
+</html>

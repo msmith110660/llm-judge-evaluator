@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Judge Evaluator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #12161C; --surface: #1C222B; --border: #3A4556;
+      --accent: #2563EB; --accent-light: #DBEAFE;
+      --text: #E2E8F0; --text-muted: #9CA3B0;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 56px 24px; }
+    .wrap { max-width: 880px; margin: 0 auto; }
+    .badge { display: inline-block; padding: 6px 16px; border-radius: 100px; font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent-light); background: rgba(37, 99, 235, 0.28); border: 1px solid rgba(37, 99, 235, 0.4); }
+    h1 { font-size: 34px; margin: 16px 0 8px; }
+    .lede { color: var(--text-muted); font-size: 17px; max-width: 640px; }
+    .tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; margin-top: 36px; }
+    a.tool { display: block; text-decoration: none; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; transition: border-color 0.2s; }
+    a.tool:hover, a.tool:focus-visible { border-color: var(--accent); outline: none; }
+    .tool h2 { font-size: 20px; margin-bottom: 6px; }
+    .tool p { color: var(--text-muted); font-size: 14px; }
+    .tool .go { display: inline-block; margin-top: 14px; color: #93B4F5; font-weight: 600; font-size: 14px; }
+    .note { margin-top: 36px; color: var(--text-muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <span class="badge">LLM-as-Judge</span>
+    <h1>LLM Judge Evaluator</h1>
+    <p class="lede">Score LLM agent responses for relevance, tone, groundedness in RAG context, and system prompt adherence, using a second LLM as the judge.</p>
+
+    <div class="tools">
+      <a class="tool" href="evaluator.html">
+        <h2>Single Evaluator</h2>
+        <p>Paste one prompt and response, with optional RAG context and system prompt. Get scores, detected guardrails, violations and suggested fixes.</p>
+        <span class="go">Open evaluator →</span>
+      </a>
+      <a class="tool" href="batch-runner.html">
+        <h2>Batch Runner</h2>
+        <p>Upload a CSV or Excel file of test cases, map the columns, and score every row. Export a CSV or a Word report.</p>
+        <span class="go">Open batch runner →</span>
+      </a>
+    </div>
+
+    <p class="note">Runs entirely in your browser. API keys are sent only to the evaluator provider you choose and are never stored.</p>
+  </main>
+</body>
+</html>

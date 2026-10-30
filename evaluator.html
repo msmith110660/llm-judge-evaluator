@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Judge Evaluator</title>
+  <style>
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Dark theme palette ─────────────────────────────────────────────── */
+    :root {
+      --bg:           #12161C;
+      --surface:      #1C222B;
+      --surface2:     #273040;
+      --border:       #3A4556;
+      --accent:       #2563EB;
+      --accent-glow:  rgba(37, 99, 235, 0.28);
+      --accent-light: #DBEAFE;
+      --gold:         #F2B43C;
+      --gold-glow:    rgba(242, 180, 60, 0.2);
+      --text:         #E2E8F0;   /* Near-white body text                       */
+      --text-muted:   #9CA3B0;   /* Secondary text                             */
+      --text-dim:     #6B7280;   /* Tertiary / placeholder text                */
+      --green:        #10b981;   /* Functional — pass indicators               */
+      --yellow:       #F2B43C;
+      --red:          #ef4444;   /* Functional — fail indicators               */
+      --purple:       #a78bfa;   /* Accent — Response Improvements card        */
+      --teal:         #2dd4bf;   /* Accent — Prompt Refinements card           */
+      --orange:       #F2B43C;
+      --radius: 12px;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); padding: 40px; line-height: 1.6; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { text-align: center; margin-bottom: 40px; }
+    .header-badge { display: inline-block; background: var(--accent-glow); padding: 6px 16px; border-radius: 100px; font-size: 12px; color: var(--accent-light); border: 1px solid rgba(37,99,235,0.4); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; }
+    label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
+    .optional-tag { color: var(--text-dim); font-weight: 400; font-size: 11px; margin-left: 4px; text-transform: none; }
+    .field-hint { font-size: 11px; color: var(--text-dim); margin-top: -10px; margin-bottom: 12px; font-style: italic; }
+    textarea, input, select { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; color: var(--text); outline: none; margin-bottom: 15px; font-family: inherit; transition: border-color 0.2s; }
+    textarea:focus, input:focus, select:focus { border-color: var(--accent); }
+    select { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238892a4' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
+    select option { background: var(--surface2); color: var(--text); }
+    .load-models-btn { width: auto; padding: 8px 16px; font-size: 12px; font-weight: 600; margin-bottom: 15px; margin-left: 8px; box-shadow: none; }
+    .or-model-row { display: flex; align-items: flex-end; gap: 0; }
+    .or-model-row select { flex: 1; }
+    #openrouterModelWrap { display: none; margin-top: -8px; }
+    .fields-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .fields-row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .btn-wrap { text-align: center; margin: 30px 0; display: flex; justify-content: center; gap: 15px; }
+    button { background: var(--accent); color: white; border: none; padding: 16px 48px; border-radius: 8px; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 15px var(--accent-glow); font-size: 15px; }
+    button:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 6px 20px var(--accent-glow); }
+    button.secondary { background: var(--surface2); border: 1px solid var(--border); color: var(--text); box-shadow: none; }
+    button.secondary:hover { background: var(--border); }
+    #results { display: none; margin-top: 20px; }
+    .score-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 20px; }
+    .score-card { background: var(--surface); padding: 24px; border-radius: var(--radius); border: 1px solid var(--border); border-top: 4px solid var(--accent); }
+    .dev-metrics { background: var(--bg); border: 1px dashed var(--border); padding: 20px; border-radius: 8px; margin-top: 20px; }
+    .dev-metrics h4 { font-size: 11px; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; letter-spacing: 0.08em; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    .metric-list { font-family: 'SF Mono', monospace; font-size: 13px; color: var(--teal); list-style: decimal inside; }
+    .loading-state { display: none; text-align: center; padding: 60px; flex-direction: column; align-items: center; gap: 15px; }
+    .spinner { width: 40px; height: 40px; border: 4px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .run-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.3); padding: 4px 12px; border-radius: 100px; font-size: 12px; color: var(--green); font-weight: 600; }
+
+    /* Rich input fields — HTML paste capture */
+    .rich-input {
+      width: 100%;
+      min-height: 160px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      color: var(--text);
+      outline: none;
+      margin-bottom: 15px;
+      font-family: inherit;
+      font-size: 14px;
+      line-height: 1.6;
+      transition: border-color 0.2s;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .rich-input:focus { border-color: var(--accent); }
+    .rich-input:empty::before { content: attr(data-placeholder); color: var(--text-dim); pointer-events: none; }
+    .rich-input b, .rich-input strong { font-weight: 700; color: var(--text); }
+    .rich-input ol, .rich-input ul { padding-left: 20px; }
+    .rich-input li { margin-bottom: 4px; }
+    .rich-input p { margin-bottom: 6px; }
+
+    /* System Prompt section */
+    .system-prompt-section {
+      border: 1px solid rgba(249, 115, 22, 0.3);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+      background: linear-gradient(135deg, rgba(249, 115, 22, 0.04), transparent);
+    }
+    .system-prompt-section label { color: var(--orange); }
+    .system-prompt-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(249, 115, 22, 0.12);
+      border: 1px solid rgba(249, 115, 22, 0.3);
+      padding: 4px 12px;
+      border-radius: 100px;
+      font-size: 11px;
+      color: var(--orange);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 14px;
+    }
+    .system-prompt-badge::before { content: "⚙"; font-size: 12px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="header-badge">Hybrid Evaluation Framework</div>
+    <h1>LLM Response Evaluator</h1>
+    <p style="color: var(--text-muted);">Distinguishing Technical RAG Metrics for Devs and Quality Scores for QA.</p>
+  </div>
+
+  <div class="card">
+    <div class="fields-row-3">
+      <div>
+        <label>Evaluator LLM</label>
+        <select id="evaluatorProvider" onchange="onProviderChange()">
+          <option value="gemini">Google Gemini</option>
+          <option value="anthropic">Anthropic Claude</option>
+          <option value="openrouter">OpenRouter</option>
+        </select>
+      </div>
+      <div>
+        <label id="apiKeyLabel">Google Cloud API Key</label>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <input type="password" id="apiKey" placeholder="AIzaSy..." style="margin-bottom:0; flex:1;">
+          <button id="loadModelsBtn" class="secondary load-models-btn" onclick="loadOpenRouterModels()" style="display:none; white-space:nowrap;">Load Models</button>
+        </div>
+        <div id="modelIdWrap">
+          <label for="evaluatorModelId" style="margin-top:12px;">Evaluator Model ID</label>
+          <input type="text" id="evaluatorModelId" value="gemini-2.5-pro" spellcheck="false" autocomplete="off">
+        </div>
+        <div id="openrouterModelWrap">
+          <label style="margin-top:12px;">OpenRouter Model</label>
+          <input type="text" id="openrouterFilter" placeholder="Filter models..." style="margin-bottom:6px;" oninput="filterOpenRouterModels()">
+          <select id="openrouterModel">
+            <option value="">— select a model —</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label>Model Under Test</label>
+        <input type="text" id="modelUnderTest" placeholder="e.g. gpt-4o, claude-sonnet-4-6, gemini-2.0-flash...">
+      </div>
+    </div>
+
+    <!-- Prompt + Response with HTML paste capture -->
+    <div class="fields-row">
+      <div>
+        <label>Original Prompt</label>
+        <div id="promptText" class="rich-input" contenteditable="true" data-placeholder="Paste or type the original prompt..."></div>
+      </div>
+      <div>
+        <label>LLM Response</label>
+        <div id="responseText" class="rich-input" contenteditable="true" data-placeholder="Paste the LLM response — bold and numbered lists are preserved automatically..."></div>
+      </div>
+    </div>
+
+    <!-- RAG fields -->
+    <div class="fields-row-3">
+      <div><label>RAG Query <span class="optional-tag">(Optional)</span></label><textarea id="ragQuery" rows="5"></textarea></div>
+      <div><label>RAG Context (JSON response) <span class="optional-tag">(Optional)</span></label><textarea id="ragContext" rows="5"></textarea></div>
+      <div style="display:flex; align-items:center;">
+        <p style="font-size:12px; color:var(--text-dim); font-style:italic;">Guardrails are now captured via the <span style="color:var(--orange);">System Prompt</span> field below.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- System Prompt Section -->
+  <div class="system-prompt-section">
+    <div class="system-prompt-badge">System Prompt</div>
+    <label>System Prompt <span class="optional-tag">(Optional)</span></label>
+    <p class="field-hint">Paste the full system prompt sent to the LLM — guardrails, fallback instructions, tone rules, restrictions, and persona directives will be automatically detected and scored.</p>
+    <textarea id="systemPromptText" rows="8" placeholder="e.g. You are a helpful assistant. You must never discuss competitor products. If asked about pricing, always direct the user to the sales team. Always respond in a professional tone..."></textarea>
+  </div>
+
+  <div class="btn-wrap">
+    <button id="evalBtn" onclick="runEvaluation()">Evaluate Response</button>
+  </div>
+
+  <div class="loading-state" id="loadingState">
+    <div class="spinner"></div>
+    <p style="font-weight: 600; color: var(--accent);">Performing High-Criticality Analysis...</p>
+  </div>
+
+  <div id="results">
+    <div class="card" style="border-top: 4px solid var(--accent);">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap; gap: 12px;">
+        <div style="display:flex; align-items:center; gap: 16px;">
+          <h2>Overall Quality Score: <span id="ovScore"></span>/100</h2>
+          <span class="run-badge" id="runBadge">1 run stored</span>
+          <span id="evalTimer" style="font-size:12px; color:var(--text-dim);"></span>
+        </div>
+        <div style="display:flex; gap: 10px; flex-wrap: wrap;">
+          <button class="secondary" style="padding: 10px 20px; font-size: 13px;" onclick="exportCurrentRun()">Export This Run (CSV)</button>
+          <button class="secondary" style="padding: 10px 20px; font-size: 13px;" onclick="exportAllRuns()">Export All Runs (<span id="runCount">1</span>)</button>
+        </div>
+      </div>
+      <p id="verdictText" style="margin-top:12px; color:var(--text-muted); font-size: 16px;"></p>
+
+      <div id="devPanel" class="dev-metrics" style="display:none;">
+        <h4>Developer Technical View: Vector Similarity Decimals</h4>
+        <ul id="metricList" class="metric-list"></ul>
+      </div>
+    </div>
+
+    <div class="score-grid" id="scoreGrid"></div>
+
+    <div class="fields-row" style="margin-top:20px;">
+      <div class="card" style="border-top: 4px solid var(--purple);"><strong>Response Improvements</strong><ul id="respImprov" style="margin-top:12px; font-size:14px; color:var(--text-muted); padding-left: 18px;"></ul></div>
+      <div class="card" style="border-top: 4px solid var(--teal);"><strong>Prompt Refinements</strong><ul id="promptImprov" style="margin-top:12px; font-size:14px; color:var(--text-muted); padding-left: 18px;"></ul></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let lastResult = null;
+let allResults = [];
+let openrouterAllModels = [];
+
+// Provider configuration — add new providers here
+const PROVIDERS = {
+  gemini: {
+    keyLabel: 'Google Cloud API Key',
+    keyPlaceholder: 'AIzaSy...',
+    defaultModel: 'gemini-2.5-pro'
+  },
+  anthropic: {
+    keyLabel: 'Anthropic API Key',
+    keyPlaceholder: 'sk-ant-...',
+    defaultModel: 'claude-sonnet-4-5'
+  },
+  openrouter: {
+    keyLabel: 'OpenRouter API Key',
+    keyPlaceholder: 'sk-or-...'
+  }
+};
+
+// Evaluator model is editable so a retired model ID never breaks the tool
+function getEvaluatorModel(provider) {
+  const v = document.getElementById('evaluatorModelId').value.trim();
+  return v || PROVIDERS[provider].defaultModel;
+}
+
+function onProviderChange() {
+  const provider = document.getElementById('evaluatorProvider').value;
+  const config = PROVIDERS[provider];
+  document.getElementById('apiKeyLabel').innerText = config.keyLabel;
+  document.getElementById('apiKey').placeholder = config.keyPlaceholder;
+  document.getElementById('apiKey').value = '';
+  // Show/hide OpenRouter model loader
+  const isOR = provider === 'openrouter';
+  document.getElementById('loadModelsBtn').style.display = isOR ? 'inline-flex' : 'none';
+  document.getElementById('openrouterModelWrap').style.display = 'none';
+  const modelInput = document.getElementById('evaluatorModelId');
+  modelInput.value = config.defaultModel || '';
+  document.getElementById('modelIdWrap').style.display = isOR ? 'none' : 'block';
+  document.getElementById('openrouterModel').innerHTML = '<option value="">— select a model —</option>';
+}
+
+async function loadOpenRouterModels() {
+  const key = document.getElementById('apiKey').value.trim();
+  if (!key) { alert('Enter your OpenRouter API key first.'); return; }
+
+  const btn = document.getElementById('loadModelsBtn');
+  btn.innerText = 'Loading...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/models', {
+      headers: { 'Authorization': `Bearer ${key}` }
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+
+    // Sort: free models first, then alphabetically by name
+    const models = data.data.sort((a, b) => {
+      const aFree = a.id.endsWith(':free');
+      const bFree = b.id.endsWith(':free');
+      if (aFree && !bFree) return -1;
+      if (!aFree && bFree) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    openrouterAllModels = models;
+    populateOpenRouterSelect(models);
+
+    document.getElementById('openrouterModelWrap').style.display = 'block';
+    btn.innerText = `${models.length} models loaded`;
+  } catch(e) {
+    alert('Failed to load models: ' + e.message);
+    btn.innerText = 'Load Models';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function populateOpenRouterSelect(models) {
+  const sel = document.getElementById('openrouterModel');
+  sel.innerHTML = '<option value="">— select a model —</option>';
+  models.forEach(m => {
+    const isFree = m.id.endsWith(':free');
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.innerText = (isFree ? '✦ ' : '') + m.name;
+    sel.appendChild(opt);
+  });
+}
+
+function filterOpenRouterModels() {
+  const query = document.getElementById('openrouterFilter').value.toLowerCase();
+  const filtered = query
+    ? openrouterAllModels.filter(m => m.name.toLowerCase().includes(query) || m.id.toLowerCase().includes(query))
+    : openrouterAllModels;
+  populateOpenRouterSelect(filtered);
+}
+
+// Convert arbitrary pasted HTML into clean semantic HTML for the contenteditable div.
+// Bold renders as bold, ordered/unordered lists render as lists — visually correct.
+// The host div is briefly attached to the live DOM so getComputedStyle can resolve
+// CSS-class-based bold (e.g. Tailwind "font-semibold", custom chat UI classes).
+function htmlToCleanHtml(html) {
+  const host = document.createElement('div');
+  host.style.cssText = 'position:absolute;left:-9999px;top:-9999px;visibility:hidden;pointer-events:none;';
+  host.innerHTML = html;
+  document.body.appendChild(host);
+
+  function isBoldEl(el) {
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'b' || tag === 'strong') return true;
+    if (el.style && el.style.fontWeight) {
+      const fw = el.style.fontWeight;
+      if (fw === 'bold' || parseInt(fw) >= 600) return true;
+    }
+    try {
+      const computed = window.getComputedStyle(el).fontWeight;
+      if (computed === 'bold' || parseInt(computed) >= 600) return true;
+    } catch(e) {}
+    return false;
+  }
+
+  function walk(node) {
+    let out = '';
+    node.childNodes.forEach(child => {
+      if (child.nodeType === Node.TEXT_NODE) {
+        out += child.textContent;
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const tag = child.tagName.toLowerCase();
+        if (isBoldEl(child)) {
+          out += '<b>' + walk(child) + '</b>';
+        } else if (tag === 'br') {
+          out += '<br>';
+        } else if (tag === 'ol') {
+          out += '<ol>' + walk(child) + '</ol>';
+        } else if (tag === 'ul') {
+          out += '<ul>' + walk(child) + '</ul>';
+        } else if (tag === 'li') {
+          out += '<li>' + walk(child) + '</li>';
+        } else if (['p', 'h1', 'h2', 'h3', 'h4'].includes(tag)) {
+          const inner = walk(child).trim();
+          if (inner) out += '<p>' + inner + '</p>';
+        } else if (tag === 'div') {
+          const inner = walk(child).trim();
+          if (inner) out += '<p>' + inner + '</p>';
+        } else {
+          out += walk(child);
+        }
+      }
+    });
+    return out;
+  }
+
+  let result = walk(host);
+  document.body.removeChild(host);
+  result = result.replace(/^(<p>\s*<\/p>|<br>)+/gi, '').replace(/(<p>\s*<\/p>|<br>)+$/gi, '');
+  return result;
+}
+
+// Read a rich-input div's innerHTML and convert to markdown for the evaluator API.
+// Bold → **text**, ordered lists → "1. item", bullet lists → "• item"
+function innerHtmlToMarkdown(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  function walk(node) {
+    let text = '';
+    node.childNodes.forEach(child => {
+      if (child.nodeType === Node.TEXT_NODE) {
+        text += child.textContent;
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const tag = child.tagName.toLowerCase();
+        if (tag === 'b' || tag === 'strong') {
+          text += '**' + walk(child) + '**';
+        } else if (tag === 'br') {
+          text += '\n';
+        } else if (tag === 'ol') {
+          let i = 1;
+          child.querySelectorAll(':scope > li').forEach(li => {
+            text += '\n' + i + '. ' + walk(li).trim();
+            i++;
+          });
+          text += '\n';
+        } else if (tag === 'ul') {
+          child.querySelectorAll(':scope > li').forEach(li => {
+            text += '\n• ' + walk(li).trim();
+          });
+          text += '\n';
+        } else if (tag === 'li') {
+          text += walk(child);
+        } else if (['p', 'div', 'h1', 'h2', 'h3', 'h4'].includes(tag)) {
+          const inner = walk(child).trim();
+          if (inner) text += '\n' + inner + '\n';
+        } else {
+          text += walk(child);
+        }
+      }
+    });
+    return text;
+  }
+  return walk(div).replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function getFieldMarkdown(id) {
+  return innerHtmlToMarkdown(document.getElementById(id).innerHTML);
+}
+
+function attachPasteHandler(id) {
+  const el = document.getElementById(id);
+  el.addEventListener('paste', function(e) {
+    e.preventDefault();
+    const html = e.clipboardData.getData('text/html');
+    if (html) {
+      document.execCommand('insertHTML', false, htmlToCleanHtml(html));
+    } else {
+      document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  attachPasteHandler('promptText');
+  attachPasteHandler('responseText');
+});
+
+const SYSTEM_PROMPT = `You are a critical LLM evaluator.
+Evaluate the following dimensions:
+1. Relevance — Does the response answer the prompt?
+2. Tone — Is the tone appropriate and consistent?
+3. Groundedness — ONLY if RAG Context is provided: does the response stay grounded in the provided context? If RAG context is provided and the response matches it, treat this as a correct grounded answer. Do NOT penalise as hallucination.
+4. System Prompt Adherence — ONLY if a System Prompt is provided: carefully parse the system prompt for ALL instructions including guardrails, fallback behaviors, tone/persona directives, formatting rules, and restrictions. Score how well the LLM response followed every instruction.
+   IMPORTANT hallucination rule: If RAG context IS provided and the response is grounded in it, do NOT flag the response as a hallucination or fabrication violation — treat it as a legitimate RAG retrieval. Only flag hallucination as a violation if NO RAG context was provided AND the response contains factual information that cannot be verified from any provided input.
+   IMPORTANT formatting note: In the response text, **text** denotes bold formatting, "1. item" denotes a numbered list item, and "• item" denotes a bullet list item.
+
+Return ONLY valid JSON with no markdown, no code fences, no preamble:
+{
+  "relevance_score": 0-100, "relevance_reasoning": "...",
+  "tone_score": 0-100, "tone_reasoning": "...",
+  "groundedness_score": 0-100 or null, "groundedness_reasoning": "...",
+  "system_prompt_adherence_score": 0-100 or null, "system_prompt_adherence_reasoning": "...",
+  "system_prompt_instructions_detected": ["instruction 1", "instruction 2", "..."],
+  "system_prompt_violations": ["violation 1 if any", "..."],
+  "overall_score": 0-100,
+  "verdict": "...",
+  "response_improvements": ["...", "...", "..."],
+  "prompt_refinements": ["...", "...", "..."]
+}
+If Groundedness input is missing, set groundedness_score to null.
+If System Prompt input is missing, set system_prompt_adherence_score to null and both array fields to empty arrays.
+Be strictly critical and enumerate every detected instruction and every confirmed violation.`;
+
+// Clean and extract JSON from model response
+// Handles: code fences, prose before/after JSON, unterminated decimal numbers
+function stripFences(text) {
+  // Strip code fences
+  let cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+  // Always extract from first '{' to last '}' — removes prose before AND after the JSON block
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error('Model returned plain text instead of JSON. This model does not support structured output and cannot be used as an evaluator.');
+  }
+  cleaned = cleaned.slice(start, end + 1);
+  // Fix unterminated decimal numbers e.g. 0. or 85. before a delimiter
+  cleaned = cleaned.replace(/(\d+\.)([,}\]\s])/g, '$10$2');
+  return cleaned;
+}
+
+// --- Provider API calls ---
+
+async function callGemini(key, userContent) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(getEvaluatorModel('gemini'))}:generateContent?key=${key}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [{ parts: [{ text: userContent }] }],
+      generationConfig: { responseMimeType: "application/json", temperature: 0 }
+    })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  const rawGemini = data.candidates[0].content.parts[0].text;
+  console.log('[Gemini raw response]', rawGemini);
+  return JSON.parse(stripFences(rawGemini));
+}
+
+async function callOpenRouter(key, userContent) {
+  const model = document.getElementById('openrouterModel').value;
+  if (!model) throw new Error('Please select an OpenRouter model.');
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`,
+      'HTTP-Referer': window.location.href,
+      'X-Title': 'LLM Response Evaluator'
+    },
+    body: JSON.stringify({
+      model: model,
+      // Merge system prompt into user message for universal model compatibility —
+      // some OpenRouter models (e.g. Gemma via Google AI Studio) do not support the system role.
+      messages: [
+        { role: 'user', content: SYSTEM_PROMPT + '\n\n' + userContent }
+      ],
+      temperature: 0
+    })
+  });
+  const data = await res.json();
+  // Surface full error detail — OpenRouter wraps provider errors with metadata
+  if (data.error) {
+    const detail = typeof data.error === 'object'
+      ? `${data.error.message || ''} (code: ${data.error.code || 'unknown'})${data.error.metadata ? ' — ' + JSON.stringify(data.error.metadata) : ''}`
+      : JSON.stringify(data.error);
+    throw new Error(detail);
+  }
+  // Some models return an error inside the choice content
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error('No content returned. Full response: ' + JSON.stringify(data));
+  console.log('[OpenRouter raw response]', content);
+  return JSON.parse(stripFences(content));
+}
+
+async function callAnthropic(key, userContent) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: getEvaluatorModel('anthropic'),
+      max_tokens: 4096,
+      temperature: 0,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userContent }]
+    })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+  const rawAnthropic = data.content[0].text;
+  console.log('[Anthropic raw response]', rawAnthropic);
+  return JSON.parse(stripFences(rawAnthropic));
+}
+
+async function runEvaluation() {
+  const provider = document.getElementById('evaluatorProvider').value;
+  const key = document.getElementById('apiKey').value.trim();
+  const prompt = getFieldMarkdown('promptText');
+  const resp = getFieldMarkdown('responseText');
+  const rc = document.getElementById('ragContext').value.trim();
+  const sp = document.getElementById('systemPromptText').value.trim();
+
+  if(!key || !prompt || !resp) { alert("Key, Prompt, and Response required."); return; }
+
+  document.getElementById('loadingState').style.display = 'flex';
+  document.getElementById('results').style.display = 'none';
+
+  // Parse RAG chunks for dev panel display (file name + score)
+  // Handles both plain JSON and escaped JSON (\"key\": \"value\")
+  let ragChunks = [];
+  if (rc) {
+    try {
+      let jsonStr = rc.trim();
+      // If outer value is a quoted JSON string, unwrap it
+      if (jsonStr.startsWith('"')) jsonStr = JSON.parse(jsonStr);
+      // If still escaped, unescape backslash-quotes
+      if (typeof jsonStr === 'string' && jsonStr.includes('\\"')) {
+        jsonStr = jsonStr.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+      }
+      const parsed = JSON.parse(jsonStr);
+      if (Array.isArray(parsed)) {
+        ragChunks = parsed.map(chunk => ({
+          file: chunk.document?.uri
+            ? chunk.document.uri.split('/').pop().replace(/%20/g, ' ')
+            : (chunk.document?.title || 'Unknown'),
+          score: chunk.score ?? null
+        }));
+      }
+    } catch (e) { /* not parseable, dev panel stays hidden */ }
+  }
+
+  // If RAG context is JSON, extract original_file, content, and score for each chunk
+  let ragForEval = rc || 'Not provided';
+  if (rc) {
+    try {
+      const parsed = JSON.parse(rc);
+      if (Array.isArray(parsed)) {
+        ragForEval = parsed.map((chunk, i) => {
+          const file = chunk.document?.uri
+            ? chunk.document.uri.split('/').pop().replace(/%20/g, ' ')
+            : (chunk.document?.title || `Chunk ${i + 1}`);
+          const score = chunk.score != null ? ` (score: ${chunk.score.toFixed(4)})` : '';
+          return `[${i + 1}] Source: ${file}${score}\n${chunk.content || ''}`;
+        }).join('\n\n');
+      }
+    } catch (e) { /* not JSON, use raw */ }
+  }
+
+  const userContent = `PROMPT: ${prompt}\n\nRESPONSE: ${resp}\n\nRAG CONTEXT: ${ragForEval}\n\nSYSTEM PROMPT: ${sp || 'Not provided'}`;
+
+  try {
+    const evalStart = performance.now();
+
+    if (provider === 'gemini') {
+      lastResult = await callGemini(key, userContent);
+    } else if (provider === 'anthropic') {
+      lastResult = await callAnthropic(key, userContent);
+    } else if (provider === 'openrouter') {
+      lastResult = await callOpenRouter(key, userContent);
+    }
+
+    const elapsed = ((performance.now() - evalStart) / 1000).toFixed(3);
+
+    allResults.push({
+      model: document.getElementById('modelUnderTest').value.trim(),
+      evaluator: provider === 'openrouter'
+        ? 'openrouter/' + document.getElementById('openrouterModel').value
+        : provider,
+      elapsed,
+      prompt,
+      response: resp,
+      ragContext: rc,
+      systemPrompt: sp,
+      result: lastResult
+    });
+
+    render(lastResult, !!rc, !!sp, ragChunks, elapsed);
+  } catch (e) {
+    alert("Evaluation failed: " + e.message);
+  } finally {
+    document.getElementById('loadingState').style.display = 'none';
+  }
+}
+
+function render(data, hasRag, hasSP, ragChunks, elapsed) {
+  document.getElementById('ovScore').innerText = data.overall_score;
+  document.getElementById('verdictText').innerText = data.verdict;
+  document.getElementById('evalTimer').innerText = elapsed ? `⏱ ${elapsed}s` : '';
+
+  const count = allResults.length;
+  document.getElementById('runBadge').innerText = count === 1 ? '1 run stored' : `${count} runs stored`;
+  document.getElementById('runCount').innerText = count;
+
+  const devPanel = document.getElementById('devPanel');
+  const metricList = document.getElementById('metricList');
+  if (ragChunks.length > 0) {
+    devPanel.style.display = 'block';
+    metricList.innerHTML = ragChunks.map((c, i) =>
+      `<li><span style="color:var(--text-muted);">${c.file}</span> — ${c.score != null ? c.score.toFixed(4) : 'N/A'}</li>`
+    ).join('');
+    const scores = ragChunks.filter(c => c.score != null).map(c => c.score);
+    if (scores.length > 0) {
+      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+      metricList.innerHTML += `<li style="margin-top:12px; color:var(--accent); font-weight:bold; list-style:none;">Avg Confidence: ${avg.toFixed(4)}</li>`;
+    }
+  } else {
+    devPanel.style.display = 'none';
+  }
+
+  const grid = document.getElementById('scoreGrid');
+  grid.innerHTML = '';
+
+  const addCard = (title, score, reason, inputProvided, accentColor) => {
+    if (!inputProvided && (title === "Groundedness" || title === "System Prompt Adherence")) return;
+    const color = score >= 90 ? 'var(--green)' : score >= 70 ? 'var(--yellow)' : 'var(--red)';
+    const topColor = accentColor || color;
+    grid.innerHTML += `
+      <div class="score-card" style="border-top-color:${topColor}">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <strong style="font-size:12px; text-transform:uppercase;">${title}</strong>
+          <span style="color:${color}; font-weight:800; font-size:22px;">${score ?? 'N/A'}</span>
+        </div>
+        <p style="font-size:13px; color:var(--text-muted)">${reason}</p>
+      </div>`;
+  };
+
+  addCard("Relevance", data.relevance_score, data.relevance_reasoning, true);
+  addCard("Tone", data.tone_score, data.tone_reasoning, true);
+  addCard("Groundedness", data.groundedness_score, data.groundedness_reasoning, hasRag);
+  addCard("System Prompt Adherence", data.system_prompt_adherence_score, data.system_prompt_adherence_reasoning, hasSP, 'var(--orange)');
+
+  const existingDetail = document.getElementById('spDetailPanel');
+  if (existingDetail) existingDetail.remove();
+
+  if (hasSP && data.system_prompt_instructions_detected) {
+    const instructions = data.system_prompt_instructions_detected || [];
+    const violations = data.system_prompt_violations || [];
+
+    const detailPanel = document.createElement('div');
+    detailPanel.id = 'spDetailPanel';
+    detailPanel.style.cssText = 'margin-top: 20px;';
+    detailPanel.innerHTML = `
+      <div class="card" style="border-top: 4px solid var(--orange);">
+        <strong style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--orange);">⚙ System Prompt — Detected Instructions &amp; Violations</strong>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 16px;">
+          <div>
+            <p style="font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 600; margin-bottom: 10px; letter-spacing: 0.05em;">Instructions Detected (${instructions.length})</p>
+            <ul style="font-size: 13px; color: var(--text-muted); padding-left: 18px;">
+              ${instructions.length > 0 ? instructions.map(i => `<li style="margin-bottom:6px;">${i}</li>`).join('') : '<li style="color:var(--text-dim); list-style:none;">None detected</li>'}
+            </ul>
+          </div>
+          <div>
+            <p style="font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 600; margin-bottom: 10px; letter-spacing: 0.05em;">Violations Flagged (${violations.length})</p>
+            <ul style="font-size: 13px; padding-left: 18px;">
+              ${violations.length > 0
+                ? violations.map(v => `<li style="margin-bottom:6px; color:var(--red);">${v}</li>`).join('')
+                : '<li style="color:var(--green); list-style:none;">✓ No violations detected</li>'}
+            </ul>
+          </div>
+        </div>
+      </div>`;
+
+    const scoreGrid = document.getElementById('scoreGrid');
+    scoreGrid.parentNode.insertBefore(detailPanel, scoreGrid.nextSibling);
+  }
+
+  const pop = (id, arr) => {
+    document.getElementById(id).innerHTML = (arr || []).map(s => `<li>${s}</li>`).join('');
+  };
+  pop('respImprov', data.response_improvements);
+  pop('promptImprov', data.prompt_refinements);
+
+  document.getElementById('results').style.display = 'block';
+}
+
+function buildRow(run) {
+  const r = run.result;
+  return [
+    escapeCsv(run.model),
+    escapeCsv(run.evaluator),
+    escapeCsv(run.elapsed ?? ''),
+    escapeCsv(run.prompt),
+    r.overall_score,
+    escapeCsv(r.verdict),
+    r.relevance_score,
+    escapeCsv(r.relevance_reasoning),
+    r.tone_score,
+    escapeCsv(r.tone_reasoning),
+    r.groundedness_score ?? "",
+    escapeCsv(r.groundedness_reasoning ?? ""),
+    r.system_prompt_adherence_score ?? "",
+    escapeCsv(r.system_prompt_adherence_reasoning ?? ""),
+    escapeCsv((r.system_prompt_instructions_detected || []).join(' | ')),
+    escapeCsv((r.system_prompt_violations || []).join(' | ')),
+    escapeCsv((r.response_improvements || []).join(' | ')),
+    escapeCsv((r.prompt_refinements || []).join(' | '))
+  ];
+}
+
+const CSV_HEADERS = [
+  "Model Under Test", "Evaluator LLM", "Eval Time (s)", "Original Prompt",
+  "Overall Score", "Verdict",
+  "Relevance Score", "Relevance Reasoning",
+  "Tone Score", "Tone Reasoning",
+  "Groundedness Score", "Groundedness Reasoning",
+  "System Prompt Adherence Score", "System Prompt Adherence Reasoning",
+  "System Prompt Instructions Detected", "System Prompt Violations",
+  "Response Improvements", "Prompt Refinements"
+];
+
+function escapeCsv(str) {
+  if (str === null || str === undefined || str === '') return '""';
+  return '"' + String(str).replace(/"/g, '""').replace(/\n/g, ' ') + '"';
+}
+
+function downloadCsv(content, filename) {
+  const encodedUri = encodeURI("data:text/csv;charset=utf-8," + content);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function exportCurrentRun() {
+  if (!lastResult || allResults.length === 0) return;
+  const run = allResults[allResults.length - 1];
+  const csv = CSV_HEADERS.join(",") + "\n" + buildRow(run).join(",");
+  downloadCsv(csv, `llm_eval_run_${new Date().getTime()}.csv`);
+}
+
+function exportAllRuns() {
+  if (allResults.length === 0) return;
+  const rows = allResults.map(run => buildRow(run).join(","));
+  const csv = CSV_HEADERS.join(",") + "\n" + rows.join("\n");
+  downloadCsv(csv, `llm_eval_all_runs_${new Date().getTime()}.csv`);
+}
+</script>
+</body>
+</html>

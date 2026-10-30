@@ -1,0 +1,29 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.swp
+*.swo
+
+# Never commit API keys
+*.env
+.env*
+secrets.*
+
+# Claude Code internals
+.claude/
+
+# Node
+node_modules/
+
+# Build output
+dist/
+
+# Preview artifacts
+preview.html
+
+# Test output
+test-results/
+playwright-report/
