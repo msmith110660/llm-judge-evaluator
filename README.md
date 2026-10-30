@@ -1,5 +1,7 @@
 # LLM Judge Evaluator
 
+**[Try the live demo →](https://msmith110660.github.io/llm-judge-evaluator/)** (bring your own API key)
+
 A browser-based QA tool that scores LLM agent responses using a second LLM as the judge. It checks whether a response is relevant, uses the right tone, stays grounded in the RAG context it was given, and follows every rule in the agent's system prompt.
 
 No server and no build step: open `index.html` in a browser, choose an evaluator model, and run.
