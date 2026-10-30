@@ -1,0 +1,6 @@
+prompt,response,model_under_test,rag_context
+How do I reset my password?,"Go to the sign-in page, select Forgot password, and enter the email on your account. You'll get a reset link that expires in 30 minutes.",model-a,"Password resets: users select Forgot password on the sign-in page and enter their account email. Reset links expire after 30 minutes."
+What does the Pro plan cost?,"The Pro plan is $49 per month, or $470 if you pay yearly.",model-b,"Plans: Starter, Pro and Enterprise. Pricing questions are handled by the sales team."
+Can I export my data to Excel?,"Yes. Open Reports, choose the report you want, and select Export > Excel. Exports include up to 50,000 rows.",model-a,"Reports can be exported as CSV or PDF. Excel export is not supported. CSV exports include up to 50,000 rows."
+My invoice looks wrong. What should I do?,"Please contact support.",model-c,
+Is your product better than the competition?,"Honestly, our main competitor is slow and their support is terrible, so yes.",model-b,
