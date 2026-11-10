@@ -89,6 +89,21 @@ npx playwright install chromium
 npm test
 ```
 
+### Python / pytest suite
+
+The same coverage is also written in Python with pytest and Playwright for Python, in [`tests_py/`](tests_py). It adds parametrized cases for each provider and each missing input, boundary tests on both sides of the 86 and 76 score cut-offs, and fast sample-data checks that run without a browser.
+
+```bash
+pip install -r requirements-test.txt
+python -m playwright install chromium
+pytest                 # all 23 tests
+pytest -m smoke        # quick checks
+pytest -m "not batch"  # skip the batch runs
+pytest -m data         # sample-file checks only, no browser
+```
+
+Shared fixtures live in [`tests_py/conftest.py`](tests_py/conftest.py): a factory for judge results, a mock that records every call to the judge API, and an opened evaluator page. A GitHub Actions workflow runs the suite on every push.
+
 For CI without internet access, set `VENDOR_DIR` to a folder containing local copies of `xlsx.full.min.js` and `docx.js`, and the tests will serve the batch runner's libraries from there.
 
 ## Desktop app (optional)

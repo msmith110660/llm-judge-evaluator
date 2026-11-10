@@ -27,3 +27,8 @@ preview.html
 # Test output
 test-results/
 playwright-report/
+
+# Python test output
+__pycache__/
+.pytest_cache/
+pytest-results.xml
